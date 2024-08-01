@@ -1,5 +1,6 @@
 import telebot
 import json
+import sqlite3
 from telebot import types
 from datetime import datetime
 
@@ -25,6 +26,41 @@ def save_user_data(data):
 
 user_data = load_user_data()
 user_states = {}
+
+# Establish database connection and create tables if they don't exist
+conn = sqlite3.connect('restaurant.db', check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        price REAL,
+        net_price REAL
+    )
+''')
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS cart (
+        user_id INTEGER,
+        product_id INTEGER,
+        quantity INTEGER
+    )
+''')
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        product_id INTEGER,
+        quantity INTEGER,
+        phone TEXT,
+        location TEXT,
+        order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
+conn.commit()
 
 # Ish vaqtini tekshirish uchun funksiya
 def is_working_hours():
