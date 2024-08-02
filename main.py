@@ -274,7 +274,7 @@ def show_menu(message):
         bot.reply_to(message, "Hozircha menyuda hech narsa yuq." if language == "O'zbek" else "В меню пока ничего нет.", reply_markup=create_main_menu(language))
         return
 
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
     back_button = types.KeyboardButton("⬅️ Orqaga" if language == "O'zbek" else "⬅️ Назад")
     for product in products_list:
         markup.add(types.KeyboardButton(product[1]))
