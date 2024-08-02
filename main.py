@@ -1,6 +1,5 @@
 import telebot
 import json
-import os
 import sqlite3
 from telebot import types
 from datetime import datetime
@@ -28,15 +27,17 @@ def save_user_data(data):
 user_data = load_user_data()
 user_states = {}
 
-# Database setup
+# Database connection
 conn = sqlite3.connect('restaurant.db', check_same_thread=False)
 cursor = conn.cursor()
+
+# Create tables if they don't exist
 cursor.execute('''CREATE TABLE IF NOT EXISTS products
-             (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, info TEXT, price REAL, net_price REAL, photo TEXT)''')
+                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, info TEXT, price REAL, net_price REAL, image_path TEXT)''')
 cursor.execute('''CREATE TABLE IF NOT EXISTS cart
-             (user_id INTEGER, product_id INTEGER, quantity INTEGER, price REAL)''')
+                  (user_id INTEGER, product_id INTEGER, quantity INTEGER, price REAL)''')
 cursor.execute('''CREATE TABLE IF NOT EXISTS orders
-             (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, product_id INTEGER, quantity INTEGER, phone TEXT, location TEXT, order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                  (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, product_id INTEGER, quantity INTEGER, phone TEXT, location TEXT, order_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, price REAL)''')
 conn.commit()
 
 # Ish vaqtini tekshirish uchun funksiya
@@ -126,9 +127,6 @@ def process_location_step(message, language):
         location = f"{message.location.latitude},{message.location.longitude}"
         user_data[message.chat.id]["location"] = location
         save_user_data(user_data)
-        cursor.execute("INSERT INTO orders (user_id, product_id, quantity, phone, location) VALUES (?, ?, ?, ?, ?)", 
-                       (message.chat.id, 0, 0, user_data[message.chat.id]["phone"], location))  # Dummy product_id and quantity
-        conn.commit()
         bot.reply_to(message, "Ro'yxatdan o'tish muvaffaqiyatli yakunlandi!" if language == "O'zbek" else "Регистрация успешно завершена!", reply_markup=create_main_menu(language))
         send_main_menu(message)
 
@@ -186,7 +184,7 @@ def process_product_net_price_step(message, product_name, product_price):
         except ValueError:
             bot.reply_to(message, "Iltimos, to'g'ri narx kiriting yoki /skip bosing." if user_data[str(message.chat.id)]["language"] == "O'zbek" else "Пожалуйста, введите правильную цену или нажмите /skip.", reply_markup=create_admin_menu())
             return
-    cursor.execute("INSERT INTO products (name, price, net_price) VALUES (?, ?, ?)",
+    cursor.execute("INSERT INTO products (name, price, net_price, info, image_path) VALUES (?, ?, ?, '', '')",
                    (product_name, product_price, product_net_price))
     conn.commit()
     net_price_info = f" - {product_net_price} so'm" if product_net_price else ""
@@ -276,7 +274,7 @@ def show_menu(message):
         bot.reply_to(message, "Hozircha menyuda hech narsa yuq." if language == "O'zbek" else "В меню пока ничего нет.", reply_markup=create_main_menu(language))
         return
 
-    markup = types.ReplyKeyboardMarkup(row_width=2, one_time_keyboard=True, resize_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     back_button = types.KeyboardButton("⬅️ Orqaga" if language == "O'zbek" else "⬅️ Назад")
     for product in products_list:
         markup.add(types.KeyboardButton(product[0]))
@@ -296,47 +294,56 @@ def show_product_details(message):
         bot.reply_to(message, "Bunday mahsulot topilmadi." if user_data[str(message.chat.id)]["language"] == "O'zbek" else "Продукт не найден.", reply_markup=create_main_menu(user_data[str(message.chat.id)]["language"]))
         return
 
-    user_states[message.chat.id] = {'product_id': product[0], 'quantity': 1, 'price': product[3]}
-    photo = open(product[5], 'rb') if product[5] else None
-    price_info = f"{product[3]} so'm" if user_data[str(message.chat.id)]["language"] == "O'zbek" else f"{product[3]} сум"
-    net_price_info = f"{product[4]} so'm" if product[4] and user_data[str(message.chat.id)]["language"] == "O'zbek" else f"{product[4]} сум" if product[4] else None
-    info_message = f"{product[2]}\n\n{price_info}\n{net_price_info}" if net_price_info else f"{product[2]}\n\n{price_info}"
+    user_states[message.chat.id] = {'product_id': product[0], 'quantity': 1, 'selected_price': product[3]}
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(text=f"{product[3]} so'm", callback_data=f"select_price_{product[3]}"))
+    if product[4]:
+        markup.add(types.InlineKeyboardButton(text=f"{product[4]} so'm", callback_data=f"select_price_{product[4]}"))
+    markup.add(types.InlineKeyboardButton(text="-", callback_data="decrease"),
+               types.InlineKeyboardButton(text="1", callback_data="quantity"),
+               types.InlineKeyboardButton(text="+", callback_data="increase"))
+    markup.add(types.InlineKeyboardButton(text="Qo'shish" if user_data[str(message.chat.id)]["language"] == "O'zbek" else "Добавить", callback_data="add_to_cart"),
+               types.InlineKeyboardButton(text="Bekor qilish" if user_data[str(message.chat.id)]["language"] == "O'zbek" else "Отмена", callback_data="cancel"))
 
-    if photo:
-        bot.send_photo(message.chat.id, photo, caption=info_message)
-    else:
-        bot.reply_to(message, info_message)
+    bot.send_photo(message.chat.id, open(product[5], 'rb'))  # Product image
+    bot.send_message(message.chat.id, f"{product[2]}" if user_data[str(message.chat.id)]["language"] == "O'zbek" else f"{product[2]}")
+    bot.send_message(message.chat.id, f"Narxlar: {product[3]} so'm" if user_data[str(message.chat.id)]["language"] == "O'zbek" else f"Цены: {product[3]} сум", reply_markup=markup)
 
-    update_quantity_message(message)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("select_price_") or call.data in ["decrease", "increase", "add_to_cart", "cancel"])
+def callback_inline(call):
+    state = user_states[call.message.chat.id]
+    if call.data.startswith("select_price_"):
+        state['selected_price'] = float(call.data.split("_")[2])
+    elif call.data == "decrease":
+        if state['quantity'] > 1:
+            state['quantity'] -= 1
+    elif call.data == "increase":
+        state['quantity'] += 1
+    elif call.data == "add_to_cart":
+        cursor.execute("INSERT INTO cart (user_id, product_id, quantity, price) VALUES (?, ?, ?, ?)", 
+                       (call.message.chat.id, state['product_id'], state['quantity'], state['selected_price']))
+        conn.commit()
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
+                              text=f"Savatingizga qo'shildi: {state['quantity']} dona" if user_data[str(call.message.chat.id)]["language"] == "O'zbek" else f"Добавлено в корзину: {state['quantity']} шт")
+        return
+    elif call.data == "cancel":
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Bekor qilindi" if user_data[str(call.message.chat.id)]["language"] == "O'zbek" else "Отменено")
+        return
+    update_quantity_message(call.message)
 
 def update_quantity_message(message):
     state = user_states[message.chat.id]
     markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(text=f"{state['selected_price']} so'm", callback_data=f"select_price_{state['selected_price']}"))
+    if state['selected_price'] != state['selected_price']:
+        markup.add(types.InlineKeyboardButton(text=f"{state['selected_price']} so'm", callback_data=f"select_price_{state['selected_price']}"))
     markup.add(types.InlineKeyboardButton(text="-", callback_data="decrease"),
                types.InlineKeyboardButton(text=str(state['quantity']), callback_data="quantity"),
                types.InlineKeyboardButton(text="+", callback_data="increase"))
     markup.add(types.InlineKeyboardButton(text="Qo'shish" if user_data[str(message.chat.id)]["language"] == "O'zbek" else "Добавить", callback_data="add_to_cart"),
                types.InlineKeyboardButton(text="Bekor qilish" if user_data[str(message.chat.id)]["language"] == "O'zbek" else "Отмена", callback_data="cancel"))
-    bot.send_message(message.chat.id, f"Nechta {state['product_id']} buyurtma qilasiz?" if user_data[str(message.chat.id)]["language"] == "O'zbek" else f"Сколько {state['product_id']} вы хотите заказать?", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data in ["decrease", "increase", "add_to_cart", "cancel"])
-def callback_inline(call):
-    state = user_states[call.message.chat.id]
-    if call.data == "decrease":
-        if state['quantity'] > 1:
-            state['quantity'] -= 1
-        update_quantity_message(call.message)
-    elif call.data == "increase":
-        state['quantity'] += 1
-        update_quantity_message(call.message)
-    elif call.data == "add_to_cart":
-        cursor.execute("INSERT INTO cart (user_id, product_id, quantity, price) VALUES (?, ?, ?, ?)", 
-                       (call.message.chat.id, state['product_id'], state['quantity'], state['price']))
-        conn.commit()
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                              text=f"Savatingizga qo'shildi: {state['quantity']} dona" if user_data[str(call.message.chat.id)]["language"] == "O'zbek" else f"Добавлено в корзину: {state['quantity']} шт")
-    elif call.data == "cancel":
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Bekor qilindi" if user_data[str(call.message.chat.id)]["language"] == "O'zbek" else "Отменено")
+    bot.edit_message_reply_markup(chat_id=message.chat.id, message_id=message.message_id, reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text == "☎️ Kontakt" or message.text == "☎️ Контакт")
 def show_contact(message):
