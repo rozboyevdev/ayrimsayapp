@@ -62,7 +62,7 @@ def create_main_menu(language):
     contact_button = types.KeyboardButton("☎️ Kontakt" if language == "🇺🇿 O'zbek" else "☎️ Контакт")
     order_button = types.KeyboardButton("🚖 Buyurtma" if language == "🇺🇿 O'zbek" else "🚖 Заказ")
     cart_button = types.KeyboardButton("🛒 Savatcha" if language == "🇺🇿 O'zbek" else "🛒 Корзина")
-    settings_button = types.KeyboardButton("⚙️ Sozlamalar" if language == "🇺🇿 O'zbek" else "⚙️ Настройки")
+    settings_button = types.KeyboardButton("⚙️ Sozlamalar" if language == "🇺🇿 O'zbek" else "⚙️ Настройки") 
     markup.add(menu_button, contact_button, order_button, cart_button, settings_button)
     return markup
 
@@ -286,7 +286,7 @@ def process_delete_product_id_step(message):
         bot.reply_to(message, f"✅ Mahsulot o'chirildi: ID {product_id}" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"✅ Продукт удален: ID {product_id}", reply_markup=create_admin_menu())
     except ValueError:
         bot.reply_to(message, "❌ Iltimos, to'g'ri ID kiriting." if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "❌ Пожалуйста, введите правильный ID.", reply_markup=create_admin_menu())
-
+ 
 @bot.message_handler(func=lambda message: message.text == "📜 Menyu" or message.text == "📜 Меню")
 def show_menu(message):
     language = user_data[str(message.chat.id)]["language"]
@@ -335,9 +335,9 @@ def show_product_details(message):
 
     user_states[message.chat.id] = {'product_id': product[0], 'quantity': 1}
     language = user_data[str(message.chat.id)]["language"]
-    caption = f"{product[1]}\n\n{product[2]:,.0f} so'm" if language == "🇺🇿 O'zbek" else f"{product[1]}\n\n{product[2]:,.0f} сум"
+    caption = f"{product[1]}\n\n{product[2]:,.00f} so'm" if language == "🇺🇿 O'zbek" else f"{product[1]}\n\n{product[2]:,.00f} сум"
     if product[3]:
-        caption += f" - {product[3]:,.0f} so'm" if language == "🇺🇿 O'zbek" else f" - {product[3]:,.0f} сум"
+        caption += f" - {product[3]:,.00f} so'm" if language == "🇺🇿 O'zbek" else f" - {product[3]:,.00f} сум"
     
     if product[4]:
         bot.send_photo(message.chat.id, product[4], caption=caption)
@@ -350,10 +350,10 @@ def show_price_buttons(message, price, net_price):
     language = user_data[str(message.chat.id)]["language"]
     markup = types.InlineKeyboardMarkup()
     if net_price:
-        markup.add(types.InlineKeyboardButton(text=f"{price:,.0f} so'm" if language == "🇺🇿 O'zbek" else f"{price:,.0f} сум", callback_data=f"select_price:{price}"),
-                   types.InlineKeyboardButton(text=f"{net_price:,.0f} so'm" if language == "🇺🇿 O'zbek" else f"{net_price:,.0f} сум", callback_data=f"select_net_price:{net_price}"))
+        markup.add(types.InlineKeyboardButton(text=f"{price:,.00f} so'm" if language == "🇺🇿 O'zbek" else f"{price:,.00f} сум", callback_data=f"select_price:{price}"),
+                   types.InlineKeyboardButton(text=f"{net_price:,.00f} so'm" if language == "🇺🇿 O'zbek" else f"{net_price:,.00f} сум", callback_data=f"select_net_price:{net_price}"))
     else:
-        markup.add(types.InlineKeyboardButton(text=f"{price:,.0f} so'm" if language == "🇺🇿 O'zbek" else f"{price:,.0f} сум", callback_data=f"select_price:{price}"))
+        markup.add(types.InlineKeyboardButton(text=f"{price:,.00f} so'm" if language == "🇺🇿 O'zbek" else f"{price:,.00f} сум", callback_data=f"select_price:{price}"))
     bot.send_message(message.chat.id, f"💰 Narxni tanlang:" if language == "🇺🇿 O'zbek" else "💰 Выберите цену:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_price") or call.data.startswith("select_net_price"))
