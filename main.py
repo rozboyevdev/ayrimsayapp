@@ -1,4 +1,3 @@
-
 import telebot
 import json
 import sqlite3
