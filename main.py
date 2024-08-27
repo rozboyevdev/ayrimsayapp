@@ -178,28 +178,38 @@ def process_product_name_step(message):
     bot.register_next_step_handler(message, process_product_image_step)
 
 def process_product_image_step(message):
-    product_images = [photo.file_id for photo in message.photo]
-    user_data[str(message.chat.id)]["product_images"] = product_images
-    bot.reply_to(message, "💰 Mahsulotni birinchi narxini kiriting: (xxx.xxx)" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "💰 Введите первую цену продукта: (xxx.xxx)", reply_markup=types.ForceReply())
-    bot.register_next_step_handler(message, process_product_first_price_step)
+    if not message.photo:
+        bot.reply_to(message, "❌ Rasm yuborilmadi. Iltimos, rasmni qaytadan yuboring.")
+        return
+
+    file_id = message.photo[-1].file_id
+    try:
+        file_info = bot.get_file(file_id)
+        bot.download_file(file_info.file_path)  # `file_id` ning to'g'riligini tekshirish uchun
+        user_data[str(message.chat.id)]["product_images"] = file_id
+        bot.reply_to(message, "Rasm qabul qilindi. Keyingi qadam: Mahsulot narxini kiriting.")
+        bot.register_next_step_handler(message, process_product_first_price_step)
+        # Keyingi qadam
+    except Exception as e:
+        bot.reply_to(message, "❌ Rasmni olishda xatolik yuz berdi. Iltimos, qaytadan rasm yuboring.")
+        return
 
 def process_product_first_price_step(message):
-    try:
-        product_first_price = float(message.text.replace(',', ''))
+    product_first_price = message.text.replace(',', '')
+    if not product_first_price.replace('.', '').isdigit():
+        bot.reply_to(message, "❌ Iltimos, to'g'ri narx kiriting." if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "❌ Пожалуйста, введите правильную цену.", reply_markup=types.ForceReply())
+        bot.register_next_step_handler(message, process_product_first_price_step)
+    else:
         user_data[str(message.chat.id)]["product_first_price"] = product_first_price
         bot.reply_to(message, "💰 Mahsulotni ikkinchi narxini kiriting: (xxx.xxx) yoki /skip bosing:" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "💰 Введите вторую цену продукта: (xxx.xxx) или нажмите /skip:", reply_markup=types.ForceReply())
         bot.register_next_step_handler(message, process_product_second_price_step)
-    except ValueError:
-        bot.reply_to(message, "❌ Iltimos, to'g'ri narx kiriting." if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "❌ Пожалуйста, введите правильную цену.", reply_markup=types.ForceReply())
-        bot.register_next_step_handler(message, process_product_first_price_step)
 
 def process_product_second_price_step(message):
     if message.text == '/skip':
         product_second_price = None
     else:
-        try:
-            product_second_price = float(message.text.replace(',', ''))
-        except ValueError:
+        product_second_price = message.text.replace(',', '')
+        if not product_second_price.replace('.', '').isdigit():
             bot.reply_to(message, "❌ Iltimos, to'g'ri narx kiriting yoki /skip bosing." if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "❌ Пожалуйста, введите правильную цену или нажмите /skip.", reply_markup=types.ForceReply())
             return
 
