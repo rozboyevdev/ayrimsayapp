@@ -326,14 +326,18 @@ def show_category_items(message):
             row_buttons.append(types.KeyboardButton(items[i + 1][0]))
         markup.row(*row_buttons)
 
-    markup.add(types.KeyboardButton("📜 Menyu" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "📜 Меню"))
+    markup.add(types.KeyboardButton("📜 Menyu" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "📜 Меню"),
+               types.KeyboardButton("🚖 Buyurtma" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🚖 Заказ"))
 
     msg = bot.reply_to(message, "📋 Mahsulotni tanlang:" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "📋 Выберите продукт:", reply_markup=markup)
     bot.register_next_step_handler(msg, show_product_details)
 
 def show_product_details(message):
-    if message.text in ["📜 Menyu", "📜 Меню"]:
-        show_menu(message)
+    if message.text in ["📜 Menyu", "📜 Меню","🚖 Buyurtma","🚖 Заказ" ]:
+        if message.text in ["📜 Menyu", "📜 Меню"]:
+            show_menu(message)
+        elif message.text in ["🚖 Buyurtma","🚖 Заказ"]:
+            place_order(message)
         return
 
     product_name = message.text
@@ -423,8 +427,14 @@ def place_order(message):
         return
 
     user_id = message.from_user.id
-    cursor.execute("SELECT products.name, cart.quantity, cart.price FROM cart JOIN products ON cart.product_id = products.id WHERE cart.user_id = ?", (user_id,))
+    cursor.execute("""
+        SELECT products.name, cart.quantity, cart.price 
+        FROM cart 
+        JOIN products ON cart.product_id = products.id 
+        WHERE cart.user_id = ?
+    """, (user_id,))
     cart_items = cursor.fetchall()
+    
     if not cart_items:
         bot.reply_to(message, "🛒 Sizning savatingiz bo'sh." if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🛒 Ваша корзина пуста.", reply_markup=create_main_menu(message, user_data[str(message.chat.id)]["language"]))
         return
@@ -438,8 +448,12 @@ def place_order(message):
 
 def get_phone_number(message):
     phone_number = message.text
-    msg = bot.reply_to(message, "📍 Lokatsiyangizni jo'nating:" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "📍 Отправьте ваше местоположение:", reply_markup=types.ReplyKeyboardMarkup(one_time_keyboard=True).add(types.KeyboardButton('📍 Lakatsiyani yuboring' if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else '📍 Отправить местоположение', request_location=True)))
-    bot.register_next_step_handler(msg, get_location, phone_number)
+    if not (phone_number.startswith("+998") and phone_number[4:].isdigit() and len(phone_number) == 13):
+        msg = bot.reply_to(message, "Iltimos, to'g'ri telefon raqamini kiriting: +998XXXXXXXXX" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "Пожалуйста, введите правильный номер телефона: +998XXXXXXXXX", reply_markup=types.ForceReply())
+        bot.register_next_step_handler(msg, get_phone_number)
+    else:
+        msg = bot.reply_to(message, "📍 Lokatsiyangizni jo'nating:" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "📍 Отправьте ваше местоположение:", reply_markup=types.ReplyKeyboardMarkup(one_time_keyboard=True).add(types.KeyboardButton('📍 Lakatsiyani yuboring' if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else '📍 Отправить местоположение', request_location=True)))
+        bot.register_next_step_handler(msg, get_location, phone_number)
 
 def get_location(message, phone_number):
     if not message.location:
@@ -452,13 +466,13 @@ def get_location(message, phone_number):
     cart_items = cursor.fetchall()
 
     order_message = f"🆕 Yangi buyurtma:\nIsm: {user_data[str(message.chat.id)]['name']}\n" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"🆕 Новый заказ:\nИмя: {user_data[str(message.chat.id)]['name']}\n"
-    total_price = 0
+    total_price = 0.0
     for item in cart_items:
         item_price = item[1] * float(item[2].replace(',', ''))
-        order_message += f"{item[0]} : {item[1]} x {item[2]} so'm = {item_price:,.0f} so'm\n" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"{item[0]} : {item[1]} x {item[2]} сум = {item_price:,.0f} сум\n"
+        order_message += f"{item[0]} : {item[1]} x {float(item[2]):,.3f} so'm = {item_price:,.3f} so'm\n" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"{item[0]} : {item[1]} x {float(item[2]):,.3f} сум = {item_price:,.3f} сум\n"
         total_price += item_price
         cursor.execute("INSERT INTO orders (user_id, product_id, quantity, phone, location, order_date) VALUES (?, ?, ?, ?, ?, ?)", (user_id, item[1], item[2], phone_number, location, datetime.now().strftime('%Y-%m-%d')))
-    order_message += f"💵 Jami: {total_price:,.0f} so'm\n📞 Tel: {phone_number}\n📍 Lokatsiya: {location}" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"💵 Итого: {total_price:,.0f} сум\n📞 Тел: {phone_number}\n📍 Местоположение: {location}"
+    order_message += f"💵 Jami: {total_price:,.3f} so'm\n📞 Tel: {phone_number}\n📍 Lokatsiya: {location}" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"💵 Итого: {total_price:,.3f} сум\n📞 Тел: {phone_number}\n📍 Местоположение: {location}"
     conn.commit()
     bot.send_message(ORDER_GROUP_ID, order_message)
     cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
@@ -479,26 +493,25 @@ def show_cart(message):
         return
 
     cart_message = "🛒 Sizning savatingiz:\n" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🛒 Ваша корзина:\n"
-    total_price = 0
+    total_price = 0.0
     for item in cart_items:
         item_price = item[1] * float(item[2].replace(',', ''))
-        cart_message += f"{item[0]} : {item[1]} x {item[2]} so'm = {item_price:,.0f} so'm\n" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"{item[0]} : {item[1]} x {item[2]} сум = {item_price:,.0f} сум\n"
+        cart_message += f"{item[0]} : {item[1]} x {float(item[2]):,.3f} so'm = {item_price:,.3f} so'm\n" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"{item[0]} : {item[1]} x {float(item[2]):,.3f} сум = {item_price:,.3f} сум\n"
         total_price += item_price
-    cart_message += f"💵 Jami: {total_price:,.0f} so'm" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"💵 Итого: {total_price:,.0f} сум"
+    cart_message += f"💵 Jami: {total_price:,.3f} so'm" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else f"💵 Итого: {total_price:,.3f} сум"
 
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(types.KeyboardButton("🚖 Buyurtma qilish" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🚖 Заказ"),
+    markup.add(types.KeyboardButton("🚖 Buyurtma" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🚖 Заказ"),
                types.KeyboardButton("🗑️ Savatchani tozalash" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🗑️ Очистить корзину"))
     markup.add(types.KeyboardButton("🏠 Asosiy menyu" if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🏠 Главное меню"))
 
     bot.send_message(message.chat.id, cart_message, reply_markup=markup)
 
-@bot.message_handler(func=lambda message: message.text == "🗑️ Savatchani tozalash" or message.text == "🗑️ Очистить корзину")
-def clear_cart(message):
-    user_id = message.from_user.id
-    cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-    conn.commit()
-    bot.reply_to(message, "🗑️ Savatcha tozalandi." if user_data[str(message.chat.id)]["language"] == "🇺🇿 O'zbek" else "🗑️ Корзина очищена.", reply_markup=create_main_menu(message, user_data[str(message.chat.id)]["language"]))
+@bot.message_handler(func=lambda message: message.text == "🏠 Asosiy menyu" or message.text == "🏠 Главное меню")
+def send_main_menu(message):
+    language = user_data[str(message.chat.id)]["language"]
+    markup = create_main_menu(message, language)
+    bot.send_message(message.chat.id, "Asosiy menyu:" if language == "🇺🇿 O'zbek" else "Главное меню:", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text == "☎️ Kontakt" or message.text == "☎️ Контакт")
 def show_contact(message):
